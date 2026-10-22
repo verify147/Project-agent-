@@ -16,7 +16,7 @@ def call_groq_api(prompt_text, api_key):
     payload = {
         "model": "openai/gpt-oss-120b",
         "messages": [
-            {"role": "system", "content": "You are a rigorous institutional academic supervisor and senior research editor."},
+            {"role": "system", "content": "You are a rigorous institutional academic supervisor, researcher, and senior editor."},
             {"role": "user", "content": prompt_text}
         ],
         "temperature": 0.3
@@ -44,7 +44,7 @@ def call_groq_api(prompt_text, api_key):
                 return res_json["choices"][0]["message"]["content"]
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < max_retries - 1:
-                wait_time = 12 * (attempt + 1)
+                wait_time = 15 * (attempt + 1)
                 print(f"\n[!] Rate limit reached. Pausing for {wait_time}s to reset token bucket...")
                 time.sleep(wait_time)
                 continue
@@ -54,10 +54,38 @@ def call_groq_api(prompt_text, api_key):
             print(f"\n[X] API Communication Error: {e}")
             sys.exit(1)
 
+def generate_section(section_title, prompt, sample_text, department, school_name, api_key):
+    print(f"\n[+] Step 1/2: Generating initial draft for {section_title}...")
+    raw_draft = call_groq_api(prompt, api_key)
+    
+    print(f"[+] Pausing 6 seconds for token pacing...")
+    time.sleep(6) 
+    
+    print(f"[+] Step 2/2: Applying departmental stylistic reasoning and polish...")
+    refinement_prompt = f"""
+You are an expert academic editor and supervisor for the Department of {department}, {school_name}. 
+Below is an initial draft and an approved departmental reference sample showing the exact institutional tone and cadence.
+
+Refine and format the draft to match the required academic standard precisely.
+
+--- DEPARTMENTAL STYLE GUIDE (SAMPLE EXCERPT) ---
+{sample_text[:1500]}
+--------------------------------------------------
+
+--- DRAFT TO REFINE ({section_title}) ---
+{raw_draft}
+--------------------------------------------------
+
+Provide the final polished text for {section_title}.
+"""
+    refined_text = call_groq_api(refinement_prompt, api_key)
+    print(f"[✓] Successfully completed: {section_title}")
+    return refined_text
+
 def main():
     clear_screen()
     print("=" * 65)
-    print("      FEDERAL POLYTECHNIC AGENTIC THESIS GENERATOR")
+    print("    FEDERAL POLYTECHNIC STEP-BY-STEP THESIS GENERATOR")
     print("=" * 65)
 
     api_key = os.environ.get("GROQ_API_KEY")
@@ -76,22 +104,22 @@ def main():
         "1": {
             "name": "School of Applied Sciences",
             "departments": [
-                ("Computer Science", "samples/computer_science.pdf"),
-                ("Science Laboratory Technology", "samples/slt.pdf")
+                ("Computer Science", "computer_science.pdf"),
+                ("Science Laboratory Technology", "slt.pdf")
             ]
         },
         "2": {
             "name": "School of Engineering Technology",
             "departments": [
-                ("Mechanical Engineering", "samples/mechanical.pdf"),
-                ("Electrical/Electronic Engineering", "samples/electrical.pdf")
+                ("Mechanical Engineering", "mechanical.pdf"),
+                ("Electrical/Electronic Engineering", "electrical.pdf")
             ]
         },
         "3": {
             "name": "School of Business Studies",
             "departments": [
-                ("Accountancy", "samples/accountancy.pdf"),
-                ("Business Administration and Management", "samples/business_admin.pdf")
+                ("Accountancy", "accountancy.pdf"),
+                ("Business Administration and Management", "business_admin.pdf")
             ]
         }
     }
@@ -105,10 +133,9 @@ def main():
         school_choice = "2"
 
     selected_school = schools[school_choice]
-    print(f"\n[✓] Selected School: {selected_school['name']}")
+    dept_list = selected_school["departments"]
 
     print(f"\n--- SELECT DEPARTMENT ---")
-    dept_list = selected_school["departments"]
     for idx, (dept_name, _) in enumerate(dept_list, start=1):
         print(f"{idx}. {dept_name}")
 
@@ -119,78 +146,73 @@ def main():
     except Exception:
         department, target_pdf = dept_list[0]
 
-    print(f"\n[+] Final Target Department: {department}")
+    print(f"\n[+] Target Department: {department} ({selected_school['name']})")
 
     sample_text = ""
     if os.path.exists(target_pdf):
-        print(f"[+] Reading approved structural sample for {department}...")
+        print(f"[+] Ingesting institutional DNA from {target_pdf}...")
         try:
             reader = PdfReader(target_pdf)
             for page in reader.pages:
                 text = page.extract_text()
                 if text:
                     sample_text += text + "\n"
-            print("[✓] Successfully ingested sample brain.")
+            print("[✓] Institutional sample successfully loaded.")
         except Exception as e:
             print(f"[!] Warning: Could not parse PDF ({e}).")
     else:
-        print(f"[!] Note: Specific PDF not found at '{target_pdf}'. Using general institutional standard.")
+        print(f"[!] Note: PDF '{target_pdf}' not found. Using baseline academic standards.")
 
-    manual_notes = input("\nEnter any specific raw data or notes (Press Enter to skip): ").strip()
+    manual_notes = input("\nEnter any specific raw data, dimensions, or custom notes (Press Enter to skip): ").strip()
     if not manual_notes:
-        manual_notes = "None provided."
+        manual_notes = "Standard project implementation parameters."
 
-    # STEP 1: GENERATOR PASS
-    print(f"\n[+] Step 1/2: Generating core draft for Chapter 1...")
-    initial_prompt = f"""
-Write comprehensive Chapter 1 content for an academic project on the topic: "{topic}" 
-for the department of **{department}** under the **{selected_school['name']}**.
-
-Cover these exact sub-headings thoroughly:
-1.1 Background of the Study
-1.2 Statement of the Problem
-1.3 Aim and Objectives of the Study
-1.4 Significance of the Study
-1.5 Scope of the Study
-1.6 Limitations of the Study
-1.7 Definition of Technical Terms
-
-Additional notes: {manual_notes}
-"""
-    raw_draft = call_groq_api(initial_prompt, api_key)
-
-    print(f"[+] Pausing 8 seconds for token rate pacing...")
-    time.sleep(8)
-
-    # STEP 2: REFINEMENT PASS
-    print(f"[+] Step 2/2: Applying departmental stylistic reasoning and polish...")
-    refinement_prompt = f"""
-You are an expert academic editor and supervisor for the Department of {department}, {selected_school['name']}. 
-Below is an initial draft of Chapter 1, and an approved departmental reference sample showing the exact tone and cadence expected.
-
-Rewrite and polish the raw draft so that its voice, phrasing style, and academic rigor match the departmental sample precisely. 
-
---- APPROVED DEPARTMENTAL SAMPLE (TONE GUIDE) ---
-{sample_text[:1800]}
--------------------------------------------------------
-
---- RAW CHAPTER 1 DRAFT TO REVISE ---
-{raw_draft}
--------------------------------------------------------
-
-Provide the final, fully refined Chapter 1 text maintaining rigorous academic standards.
-"""
-    final_content = call_groq_api(refinement_prompt, api_key)
+    # Full Section Roadmap
+    sections_to_generate = [
+        ("Title Page & Certification", f"Draft the Title Page, Approval/Certification page for a thesis titled '{topic}' in the Department of {department}, {selected_school['name']}."),
+        ("Dedication", "Draft a formal academic Dedication page."),
+        ("Acknowledgements", "Draft comprehensive academic Acknowledgements expressing gratitude to supervisors, family, and the institution."),
+        ("Abstract", f"Draft a concise, high-impact Academic Abstract (approx. 300 words) summarizing the background, methodology, results, and conclusion for: '{topic}'."),
+        ("Chapter One - Introduction", f"Write Chapter 1 covering: 1.1 Background of the Study, 1.2 Statement of the Problem, 1.3 Objectives of Study, 1.4 Justification of Study, 1.5 Scope of Study. Context: {manual_notes}"),
+        ("Chapter Two - Literature Review", f"Write Chapter 2 covering: 2.1 Overview of Production, 2.2 Agro-ecological Zones / Technical Background, 2.3 Value Chain, 2.4-2.7 Technical Review of Prior Work and Machines related to '{topic}'."),
+        ("Chapter Three - Materials and Methods", f"Write Chapter 3 covering: 3.1 Materials and Equipment Used, 3.2 Machine Description and Working Principle, 3.3 Design Considerations, 3.4 Design Calculations, 3.5 Fabrication Procedure, 3.6 Performance Evaluation Procedure."),
+        ("Chapter Four - Results and Discussion", f"Write Chapter 4 covering: 4.1 Results Presentation, 4.2 Statistical Analysis of Results, 4.4 Discussion of findings for '{topic}'."),
+        ("Chapter Five - Summary, Conclusion and Recommendations", f"Write Chapter 5 covering: 5.1 Summary of findings, 5.2 Conclusion, 5.3 Recommendations based on '{topic}'."),
+        ("References", "Generate a comprehensive list of academic references in APA format supporting this engineering/technical research project.")
+    ]
 
     print("\n" + "=" * 65)
-    print(final_content)
+    print("      SETUP COMPLETE. READY FOR STEP-BY-STEP GENERATION")
     print("=" * 65)
 
-    filename = "project_chapter_1.txt"
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(final_content)
-    
-    print(f"\n[✓] Agentic refinement complete! Saved to {filename}")
+    for idx, (title, prompt_instruction) in enumerate(sections_to_generate, start=1):
+        print(f"\n[{idx}/{len(sections_to_generate)}] Next up: **{title}**")
+        user_command = input("Press [Enter] to generate this section (or type 'skip' to pass, 'exit' to quit): ").strip().lower()
+        
+        if user_command == 'exit':
+            print("\n[!] Exiting generator session. All previously saved sections are safe.")
+            break
+        if user_command == 'skip':
+            print(f"[!] Skipped {title}.")
+            continue
+
+        # Generate and refine section
+        section_content = generate_section(title, prompt_instruction, sample_text, department, selected_school['name'], api_key)
+
+        # Save individually right away
+        safe_filename = f"section_{idx}_{title.lower().replace(' ', '_').replace('-', '').replace('/', '_')}.txt"
+        with open(safe_filename, "w", encoding="utf-8") as f:
+            f.write(f"{title.upper()}\n{'='*70}\n\n{section_content}")
+        
+        print(f"[✓] Saved section securely to file: `{safe_filename}`")
+        print("-" * 65)
+        
+        # Safe cooldown pause between sections
+        time.sleep(3)
+
+    print("\n" + "=" * 65)
+    print("[✓] Session complete! Check your Colab folder for your individual section files.")
+    print("=" * 65)
 
 if __name__ == "__main__":
     main()
